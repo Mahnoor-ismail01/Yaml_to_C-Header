@@ -1,0 +1,16 @@
+---
+kind: instruction
+name: andn
+long_name: AND with inverted operand
+description: Performs the bitwise logical AND operation between `xs1` and the bitwise inversion of `xs2`. definedBy: anyOf: [Zbb, Zbkb] assembly: xd, xs1, xs2 format: $inherits:   - inst_subtype/R/R-x.yaml#/data opcodes:   funct7:   display_name: ANDN   value: 0b0100000   funct3:   display_name: ANDN   value: 0b111   opcode: { $inherits: inst_opcode/OP.yaml#/data } access: s: always u: always vs: always vu: always data_independent_timing: true 
+operation(): |
+  if (implemented?(ExtensionName::B) && (CSR[misa].B == 1'b0)) {
+  raise (ExceptionCode::IllegalInstruction, mode(), $encoding);
+}
+
+X[xd] = X[xs2] & ~X[xs1];
+
+# SPDX-SnippetBegin
+# SPDX-FileCopyrightText: 2017-2025 Contributors to the RISCV Sail Model <https://github.com/riscv/sail-riscv/blob/master/LICENCE>
+# SPDX-License-Identifier: BSD-2-Clause
+...

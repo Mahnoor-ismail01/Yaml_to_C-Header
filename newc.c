@@ -1,72 +1,163 @@
+/*
+ header_to_yaml.c
+
+ Usage:
+   gcc -std=c99 -O2 header_to_yaml.c -o header_to_yaml
+   ./header_to_yaml input.h output.yaml
+
+ This program reads lines of the form:
+   #define MACRO "..."        (or numbers)
+ and writes:
+   macro.name: value
+ converting underscores in MACRO to dots and lowercasing.
+ It corrects C-escaped string literals (\" \\n \\r \\t \\x..).
+*/
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
 
 void restore_key(const char *macro, char *out) {
-    int out_i = 0;
-    for (int i = 0; macro[i]; i++) {
-        if (macro[i] == '_') out[out_i++] = '.';
-        else out[out_i++] = tolower((unsigned char)macro[i]);
+    size_t j = 0;
+    for (size_t i = 0; macro[i] != '\0'; ++i) {
+        if (macro[i] == '_') out[j++] = '.';
+        else out[j++] = tolower((unsigned char)macro[i]);
     }
-    out[out_i] = '\0';
+    out[j] = '\0';
 }
 
-void yaml_escape_and_print(FILE *out, const char *key, const char *value) {
-    int needs_block = strchr(value, '\n') != NULL;
-    fprintf(out, "%s: ", key);
-
-    if (needs_block) {
-        fprintf(out, "|\n");
-        const char *p = value;
-        while (*p) {
-            if (*p == '\n') {
-                fputc('\n', out);
-                if (*(p+1)) fputs("  ", out); // indent continuation lines
+/* Decode C-like escape sequences in-place:
+   \" \\n \\r \\t \\xHH etc.
+   s must be writable. */
+void decode_c_escapes(char *s) {
+    char *src = s, *dst = s;
+    while (*src) {
+        if (*src == '\\' && src[1]) {
+            src++;
+            char c = *src;
+            if (c == 'n') *dst++ = '\n';
+            else if (c == 'r') *dst++ = '\r';
+            else if (c == 't') *dst++ = '\t';
+            else if (c == '\\') *dst++ = '\\';
+            else if (c == '"') *dst++ = '"';
+            else if (c == 'x') {
+                // hex byte
+                src++;
+                int hi = 0, lo = 0, hlen = 0;
+                if (isxdigit((unsigned char)*src)) {
+                    char ch = *src++;
+                    hi = (ch <= '9') ? ch - '0' : (tolower(ch) - 'a' + 10);
+                    hlen++;
+                }
+                if (isxdigit((unsigned char)*src)) {
+                    char ch = *src;
+                    lo = (ch <= '9') ? ch - '0' : (tolower(ch) - 'a' + 10);
+                    src++;
+                    hlen++;
+                }
+                if (hlen >= 1) *dst++ = (char)((hi << 4) | lo);
+                else *dst++ = 'x'; // fallback
+                continue;
             } else {
-                fputc(*p, out);
+                // unknown escape, keep the char as-is
+                *dst++ = c;
             }
-            p++;
+            src++;
+        } else {
+            *dst++ = *src++;
         }
-        fputc('\n', out);
+    }
+    *dst = '\0';
+}
+
+/* Determine if the value contains a literal newline character */
+int contains_newline(const char *s) {
+    for (const char *p = s; *p; ++p) if (*p == '\n') return 1;
+    return 0;
+}
+
+/* Print YAML-safe scalar or block for the value */
+void print_yaml_value(FILE *out, const char *key, char *value) {
+    // value is already decoded (escape sequences turned into actual characters)
+    if (contains_newline(value)) {
+        // Use block scalar '|' and indent continuation lines
+        fprintf(out, "%s: |\n", key);
+        char *line = strtok(value, "\n");
+        while (line) {
+            fprintf(out, "  %s\n", line);
+            line = strtok(NULL, "\n");
+        }
     } else {
-        fprintf(out, "\"");
-        for (const char *p = value; *p; p++) {
+        // Use quoted string for safety (even for numbers we quote to avoid ambiguity)
+        // Escape any double quotes or backslashes in the final YAML output
+        fprintf(out, "%s: \"", key);
+        for (const char *p = value; *p; ++p) {
             if (*p == '"') fputs("\\\"", out);
+            else if (*p == '\\') fputs("\\\\", out);
             else fputc(*p, out);
         }
         fprintf(out, "\"\n");
     }
 }
 
-int main(int argc, char *argv[]) {
+int main(int argc, char **argv) {
     if (argc != 3) {
         fprintf(stderr, "Usage: %s input.h output.yaml\n", argv[0]);
-        return 1;
+        return 2;
     }
 
     FILE *in = fopen(argv[1], "r");
-    if (!in) { perror("input"); return 1; }
+    if (!in) { perror("fopen input"); return 3; }
     FILE *out = fopen(argv[2], "w");
-    if (!out) { perror("output"); fclose(in); return 1; }
+    if (!out) { perror("fopen output"); fclose(in); return 4; }
 
-    char line[1024];
+    char line[8192];
     while (fgets(line, sizeof(line), in)) {
-        if (strncmp(line, "#define", 7) == 0) {
-            char macro[256], value[768];
-            if (sscanf(line, "#define %255s %767[^\n]", macro, value) == 2) {
-                char key[256];
-                restore_key(macro, key);
-
-                // Remove wrapping quotes from value if present
-                size_t len = strlen(value);
-                if (len >= 2 && value[0] == '"' && value[len-1] == '"') {
-                    value[len-1] = '\0';
-                    memmove(value, value+1, len-1);
-                }
-                yaml_escape_and_print(out, key, value);
-            }
+        // Skip lines that don't start with #define (allow optional leading spaces)
+        char *p = line;
+        while (*p && isspace((unsigned char)*p)) ++p;
+        if (strncmp(p, "#define", 7) != 0) continue;
+        p += 7;
+        // Skip spaces
+        while (*p && isspace((unsigned char)*p)) ++p;
+        // Read macro name
+        char macro[1024];
+        int i = 0;
+        while (*p && !isspace((unsigned char)*p) && i < (int)sizeof(macro)-1) {
+            macro[i++] = *p++;
         }
+        macro[i] = '\0';
+
+        // Skip spaces
+        while (*p && isspace((unsigned char)*p)) ++p;
+        // Remaining is the value (up to newline). Trim trailing linebreaks.
+        char value_buf[4096];
+        size_t vi = 0;
+        while (*p && *p != '\n' && vi < sizeof(value_buf)-1) {
+            value_buf[vi++] = *p++;
+        }
+        value_buf[vi] = '\0';
+
+        // If value is a quoted C string, remove the outer quotes first (if any),
+        // then decode C escapes.
+        char *valptr = value_buf;
+        if (valptr[0] == '"' && valptr[strlen(valptr)-1] == '"' && strlen(valptr) >= 2) {
+            // remove outer quotes in-place
+            memmove(valptr, valptr+1, strlen(valptr)); // shift left including final NUL
+            // now last char is the old ending quote, remove it
+            size_t L = strlen(valptr);
+            if (L > 0 && valptr[L-1] == '"') valptr[L-1] = '\0';
+        }
+
+        // Now decode C escapes (\\n -> newline, \\\" -> ", etc.)
+        decode_c_escapes(valptr);
+
+        // Convert macro -> key (underscores -> dots, lowercase)
+        char key[1024];
+        restore_key(macro, key);
+
+        // Print YAML-safe value (block or quoted scalar)
+        print_yaml_value(out, key, valptr);
     }
 
     fclose(in);

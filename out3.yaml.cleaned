@@ -1,0 +1,60 @@
+!!python/object/apply:collections.OrderedDict
+- - - add1.h
+    - ''
+  - - .schema
+    - inst_schema.json#
+  - - kind
+    - instruction
+  - - name
+    - add
+  - - long.name
+    - Integer add
+  - - description
+    - 'Add the value in xs1 to xs2, and store the result in xd.
+
+      Any overflow is thrown away.
+
+      '
+  - - definedby
+    - I
+  - - assembly
+    - xd, xs1, xs2
+  - - encoding.match
+    - 0000000----------000-----0110011
+  - - encoding.variables.0.name
+    - xs2
+  - - encoding.variables.0.location
+    - 24-20
+  - - encoding.variables.1.name
+    - xs1
+  - - encoding.variables.1.location
+    - 19-15
+  - - encoding.variables.2.name
+    - xd
+  - - encoding.variables.2.location
+    - 11-7
+  - - access.s
+    - always
+  - - access.u
+    - always
+  - - access.vs
+    - always
+  - - access.vu
+    - always
+  - - data.independent.timing
+    - '1'
+  - - operation..
+    - X[xd] = X[xs1] + X[xs2];
+  - - sail..
+    - "{\n  let xs1_val = X(xs1);\n  let xs2_val = X(xs2);\n  let result : xlenbits\
+      \ = match op {\n    RISCV_ADD  => xs1_val + xs2_val,\n    RISCV_SLT  => zero_extend(bool_to_bits(xs1_val\
+      \ <_s xs2_val)),\n    RISCV_SLTU => zero_extend(bool_to_bits(xs1_val <_u xs2_val)),\n\
+      \    RISCV_AND  => xs1_val & xs2_val,\n    RISCV_OR   => xs1_val | xs2_val,\n\
+      \    RISCV_XOR  => xs1_val ^ xs2_val,\n    RISCV_SLL  => if   sizeof(xlen) ==\
+      \ 32\n                  then xs1_val << (xs2_val[4..0])\n                  else\
+      \ xs1_val << (xs2_val[5..0]),\n    RISCV_SRL  => if   sizeof(xlen) == 32\n \
+      \                 then xs1_val >> (xs2_val[4..0])\n                  else xs1_val\
+      \ >> (xs2_val[5..0]),\n    RISCV_SUB  => xs1_val - xs2_val,\n    RISCV_SRA \
+      \ => if   sizeof(xlen) == 32\n                  then shift_right_arith32(xs1_val,\
+      \ xs2_val[4..0])\n                  else shift_right_arith64(xs1_val, xs2_val[5..0])\n\
+      \  };\n  X(xd) = result;\n  RETIRE_SUCCESS\n}\n"

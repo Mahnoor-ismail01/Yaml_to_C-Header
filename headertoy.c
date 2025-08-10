@@ -23,8 +23,9 @@ char* format_multi_line_content(const char* input) {
         perror("Error allocating memory for multi-line content");
         return NULL;
     }
-    // Allocate enough space for output
-    size_t len = strlen(input) * 2 + 1024;
+
+    // Allocate enough space for output (account for indentation and newlines)
+    size_t len = strlen(input) * 3 + 1024;
     char* temp = malloc(len);
     if (!temp) {
         perror("Error allocating memory for multi-line processing");
@@ -33,48 +34,42 @@ char* format_multi_line_content(const char* input) {
     }
     temp[0] = '\0'; // Initialize output buffer
 
-    // Split input into lines, handling escaped newlines
+    // Process input character by character
     char* p = output;
     char* q = temp;
-    char* line_start = q;
+    const int indent_level = 2; // YAML standard 2-space indent
     int is_newline = 1;
+
     while (*p) {
+        if (is_newline) {
+            // Add 2-space indentation at the start of each line
+            for (int i = 0; i < indent_level; i++) *q++ = ' ';
+            is_newline = 0;
+        }
+
         if (p[0] == '\\' && p[1] == 'n') {
-            if (!is_newline) {
-                *q++ = '\n';
-                *q++ = ' '; // 2-space indent
-                *q++ = ' ';
-                line_start = q;
-            }
+            *q++ = '\n';
             p += 2;
-            is_newline = 1;
+            is_newline = 1; // Next character starts a new line
         } else if (p[0] == '\\' && p[1] == '$') {
             *q++ = '$';
             p += 2;
-            is_newline = 0;
         } else {
             *q++ = *p++;
-            is_newline = 0;
         }
     }
     *q = '\0';
 
-    // If the content is empty or a single line, ensure it’s still valid
-    if (strlen(temp) == 0) {
-        strcpy(temp, "  "); // Minimal valid literal block
-    } else if (!strchr(temp, '\n')) {
-        // Single-line content: prepend 2 spaces
-        char* single_line = malloc(len);
-        if (!single_line) {
-            perror("Error allocating memory for single-line processing");
-            free(temp);
-            free(output);
-            return NULL;
-        }
-        sprintf(single_line, "  %s", temp);
-        free(temp);
-        temp = single_line;
+    // Trim trailing whitespace and ensure a single trailing newline
+    size_t temp_len = strlen(temp);
+    while (temp_len > 0 && (temp[temp_len - 1] == ' ' || temp[temp_len - 1] == '\n')) {
+        temp[--temp_len] = '\0';
     }
+    if (temp_len == 0) {
+        // Minimal valid literal block
+        strcpy(temp, "  "); // Two spaces for indentation
+    }
+    strcat(temp, "\n"); // Ensure single trailing newline
 
     free(output);
     return temp;
@@ -225,7 +220,7 @@ int main() {
         fclose(yaml_file);
         return 1;
     }
-    if (fprintf(yaml_file, "operation(): |\n%s\n", operation_content) < 0) {
+    if (fprintf(yaml_file, "operation(): |\n%s", operation_content) < 0) {
         perror("Error writing operation()");
         free(operation_content);
         fclose(yaml_file);
