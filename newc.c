@@ -25,10 +25,6 @@ void restore_key(const char *macro, char *out) {
     }
     out[j] = '\0';
 }
-
-/* Decode C-like escape sequences in-place:
-   \" \\n \\r \\t \\xHH etc.
-   s must be writable. */
 void decode_c_escapes(char *s) {
     char *src = s, *dst = s;
     while (*src) {
