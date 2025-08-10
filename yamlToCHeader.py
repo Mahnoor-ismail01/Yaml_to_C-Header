@@ -1,21 +1,11 @@
-#!/usr/bin/env python3
-"""
-yaml_to_header.py
 
-Usage:
-  python3 yaml_to_header.py input.yaml output.h
-
-Produces:
- - input.yaml.cleaned  (cleaned YAML, deterministic order, no comments)
- - output.h            (C header with #define macros; all values C-escaped)
-"""
 import sys
 import re
 import json
 from collections import OrderedDict
 import yaml
 
-# Preserve mapping order when loading YAML
+
 def ordered_yaml_load(stream):
     class OrderedLoader(yaml.SafeLoader):
         pass
@@ -90,7 +80,7 @@ def main():
         f.write(f"/* Auto-generated from {in_yaml}.cleaned */\n")
         f.write(f"#ifndef {header_guard}\n#define {header_guard}\n\n")
         for macro, val in pairs:
-            # Skip macros that match the header guard or have no usable value
+            
             if macro == header_guard or val is None or val == "":
                 continue
             lit = c_escape_value(val)

@@ -1,17 +1,4 @@
-/*
- header_to_yaml.c
 
- Usage:
-   gcc -std=c99 -O2 header_to_yaml.c -o header_to_yaml
-   ./header_to_yaml input.h output.yaml
-
- This program reads lines of the form:
-   #define MACRO "..."        (or numbers)
- and writes:
-   macro.name: value
- converting underscores in MACRO to dots and lowercasing.
- It corrects C-escaped string literals (\" \\n \\r \\t \\x..).
-*/
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -37,7 +24,7 @@ void decode_c_escapes(char *s) {
             else if (c == '\\') *dst++ = '\\';
             else if (c == '"') *dst++ = '"';
             else if (c == 'x') {
-                // hex byte
+               
                 src++;
                 int hi = 0, lo = 0, hlen = 0;
                 if (isxdigit((unsigned char)*src)) {
@@ -55,7 +42,7 @@ void decode_c_escapes(char *s) {
                 else *dst++ = 'x'; // fallback
                 continue;
             } else {
-                // unknown escape, keep the char as-is
+                
                 *dst++ = c;
             }
             src++;
@@ -66,17 +53,17 @@ void decode_c_escapes(char *s) {
     *dst = '\0';
 }
 
-/* Determine if the value contains a literal newline character */
+
 int contains_newline(const char *s) {
     for (const char *p = s; *p; ++p) if (*p == '\n') return 1;
     return 0;
 }
 
-/* Print YAML-safe scalar or block for the value */
+
 void print_yaml_value(FILE *out, const char *key, char *value) {
-    // value is already decoded (escape sequences turned into actual characters)
+    
     if (contains_newline(value)) {
-        // Use block scalar '|' and indent continuation lines
+        
         fprintf(out, "%s: |\n", key);
         char *line = strtok(value, "\n");
         while (line) {
@@ -84,8 +71,7 @@ void print_yaml_value(FILE *out, const char *key, char *value) {
             line = strtok(NULL, "\n");
         }
     } else {
-        // Use quoted string for safety (even for numbers we quote to avoid ambiguity)
-        // Escape any double quotes or backslashes in the final YAML output
+        
         fprintf(out, "%s: \"", key);
         for (const char *p = value; *p; ++p) {
             if (*p == '"') fputs("\\\"", out);
@@ -109,14 +95,12 @@ int main(int argc, char **argv) {
 
     char line[8192];
     while (fgets(line, sizeof(line), in)) {
-        // Skip lines that don't start with #define (allow optional leading spaces)
+       
         char *p = line;
         while (*p && isspace((unsigned char)*p)) ++p;
         if (strncmp(p, "#define", 7) != 0) continue;
         p += 7;
-        // Skip spaces
         while (*p && isspace((unsigned char)*p)) ++p;
-        // Read macro name
         char macro[1024];
         int i = 0;
         while (*p && !isspace((unsigned char)*p) && i < (int)sizeof(macro)-1) {
@@ -124,9 +108,9 @@ int main(int argc, char **argv) {
         }
         macro[i] = '\0';
 
-        // Skip spaces
+        
         while (*p && isspace((unsigned char)*p)) ++p;
-        // Remaining is the value (up to newline). Trim trailing linebreaks.
+        
         char value_buf[4096];
         size_t vi = 0;
         while (*p && *p != '\n' && vi < sizeof(value_buf)-1) {
@@ -134,25 +118,24 @@ int main(int argc, char **argv) {
         }
         value_buf[vi] = '\0';
 
-        // If value is a quoted C string, remove the outer quotes first (if any),
-        // then decode C escapes.
+        
         char *valptr = value_buf;
         if (valptr[0] == '"' && valptr[strlen(valptr)-1] == '"' && strlen(valptr) >= 2) {
-            // remove outer quotes in-place
-            memmove(valptr, valptr+1, strlen(valptr)); // shift left including final NUL
-            // now last char is the old ending quote, remove it
+            
+            memmove(valptr, valptr+1, strlen(valptr)); 
+           
             size_t L = strlen(valptr);
             if (L > 0 && valptr[L-1] == '"') valptr[L-1] = '\0';
         }
 
-        // Now decode C escapes (\\n -> newline, \\\" -> ", etc.)
+        
         decode_c_escapes(valptr);
 
-        // Convert macro -> key (underscores -> dots, lowercase)
+        
         char key[1024];
         restore_key(macro, key);
 
-        // Print YAML-safe value (block or quoted scalar)
+        
         print_yaml_value(out, key, valptr);
     }
 
